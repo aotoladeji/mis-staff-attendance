@@ -95,6 +95,9 @@ router.get('/', async (req, res) => {
     console.error('[staff GET]', err.message);
     res.status(500).json({ error: 'Failed to fetch staff', detail: err.message });
   }
+});
+
+/**
  * POST /api/staff/verify
  * Body: { image: "<base64 JPEG from ZK device>" }
  * Compares the live fingerprint against every enrolled fingerprint in the DB.
