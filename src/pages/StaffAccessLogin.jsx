@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BRAND_LOGO_PATH, BRAND_NAME } from '../config/branding';
 
@@ -7,7 +7,12 @@ export default function StaffAccessLogin() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { loginStaffAccess } = useAuth();
+  const { loginStaffAccess, hasRole } = useAuth();
+
+  // Already authenticated as staff-access — go straight to the page
+  useEffect(() => {
+    if (hasRole('staff-access')) navigate('/staff-access', { replace: true });
+  }, [hasRole, navigate]);
   const navigate = useNavigate();
 
   const handleSubmit = (event) => {
@@ -71,10 +76,16 @@ export default function StaffAccessLogin() {
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-blue-200 active:scale-95 disabled:opacity-60"
             >
               {loading ? 'Signing in…' : 'Open Staff Access'}
-            </button>
-          </form>
+              </button>
+            </form>
+          </div>
+          <p className="text-center text-slate-400 text-xs mt-4">
+            Admin?{' '}
+            <Link to="/login" className="text-blue-400 hover:underline">
+              Admin Login
+            </Link>
+          </p>
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
