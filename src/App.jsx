@@ -12,11 +12,11 @@ import PasswordSettings from './pages/PasswordSettings';
 
 function PrivateRoute({ children, allowedRoles }) {
   const { user, hasRole } = useAuth();
+  const redirectTo = allowedRoles?.includes('staff-access') && !allowedRoles?.includes('admin')
+    ? '/staff-access/login'
+    : '/login';
 
   if (!user) {
-    const redirectTo = allowedRoles?.includes('staff-access') && !allowedRoles?.includes('admin')
-      ? '/staff-access/login'
-      : '/login';
     return <Navigate to={redirectTo} replace />;
   }
 
@@ -24,15 +24,7 @@ function PrivateRoute({ children, allowedRoles }) {
     return children;
   }
 
-  if (hasRole('admin')) {
-    return <Navigate to="/admin" replace />;
-  }
-
-  if (hasRole('staff-access')) {
-    return <Navigate to="/staff-access" replace />;
-  }
-
-  return <Navigate to="/login" replace />;
+  return <Navigate to={redirectTo} replace />;
 }
 
 function App() {

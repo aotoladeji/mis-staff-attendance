@@ -1,6 +1,6 @@
-﻿import { useState, useEffect } from 'react';
+﻿import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
   BRAND_ADMIN_SUBTITLE,
   BRAND_LOGO_PATH,
@@ -11,12 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { loginAdmin, hasRole } = useAuth();
-
-  // Already authenticated as admin — go straight to dashboard
-  useEffect(() => {
-    if (hasRole('admin')) navigate('/admin', { replace: true });
-  }, [hasRole, navigate]);
+  const { loginAdmin } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -87,12 +82,6 @@ export default function Login() {
 
         <p className="text-center text-slate-500 text-xs mt-6">
           {BRAND_NAME}
-        </p>
-        <p className="text-center text-slate-400 text-xs mt-3">
-          Not an admin?{' '}
-          <Link to="/staff-access/login" className="text-blue-400 hover:underline">
-            Staff Access Login
-          </Link>
         </p>
       </div>
     </div>
