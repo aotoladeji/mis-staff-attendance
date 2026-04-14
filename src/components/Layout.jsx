@@ -54,9 +54,6 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 p-3 space-y-1">
-          {showStaffControls && (
-            <NavLink to="/staff-access" icon="🔗" label={sidebarOpen ? 'Staff Access' : ''} />
-          )}
           {showAdminControls && (
             <>
               <NavLink to="/admin" icon="📊" label={sidebarOpen ? 'Dashboard' : ''} />
@@ -65,7 +62,7 @@ export default function Layout() {
               <NavLink to="/admin/settings" icon="⚙️" label={sidebarOpen ? 'Settings' : ''} />
             </>
           )}
-          {showAdminControls && <NavLink to="/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
+          {(showAdminControls || showStaffControls) && <NavLink to="/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
         </nav>
 
         {/* Footer */}
@@ -79,15 +76,6 @@ export default function Layout() {
                 >
                   <span className="text-lg">🛡️</span>
                   {sidebarOpen && 'Logout Admin'}
-                </button>
-              )}
-              {showStaffControls && (
-                <button
-                  onClick={() => logoutRole('staff-access')}
-                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-600 hover:text-white transition-all"
-                >
-                  <span className="text-lg">🔗</span>
-                  {sidebarOpen && 'Logout Staff Access'}
                 </button>
               )}
             </div>
