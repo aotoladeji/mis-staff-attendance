@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
 import { findBestMatch } from '../utils/fingerprintMatch.js';
+import { broadcastAttendanceEvent } from '../utils/sseClients.js';
 
 const router = Router();
 
@@ -282,6 +283,201 @@ router.post('/bulk-import', async (req, res) => {
     client.release();
   }
 });
+
+// ---------------------------------------------------------------------------
+// MOBILE APP COMPATIBILITY ENDPOINTS
+// The Android app calls these three paths. They map to the same DB logic
+// as the existing /api/mobile/* routes but with the body-shape the app sends.
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/staff/clock
+ * Body: { action?, method, cardUid?, fingerprintTemplate?, clientTimestamp? }
+ *   method      = "card" | "fingerprint"
+ *   action      = "in" | "out" | omit for auto-toggle
+ *   cardUid     = required when method === "card"
+ *   fingerprintTemplate = required when method === "fingerprint"
+ */
+router.post('/clock', async (req, res) => {
+  const { method, cardUid, fingerprintTemplate, action: requestedAction } = req.body ?? {};
+
+  const client = await pool.connect();
+  try {
+    let member;
+
+    if (method === 'card') {
+      if (!cardUid?.trim()) {
+        return res.status(400).json({ success: false, error: 'cardUid is required for card method', error_code: 'MISSING_CARD_UID' });
+      }
+      const { rows } = await client.query(`
+        SELECT id, name, position, department, employee_code, photo, status, pending_query_note,
+          (SELECT type FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action
+        FROM staff s WHERE card_uid = $1
+      `, [cardUid.trim()]);
+      if (!rows[0]) return res.status(404).json({ success: false, error: 'Card not registered', error_code: 'CARD_NOT_FOUND' });
+      member = rows[0];
+    } else if (method === 'fingerprint') {
+      if (!fingerprintTemplate || typeof fingerprintTemplate !== 'string') {
+        return res.status(400).json({ success: false, error: 'fingerprintTemplate is required for fingerprint method', error_code: 'MISSING_FINGERPRINT' });
+      }
+      const { rows: fpRows } = await client.query(`
+        SELECT f.id AS fp_id, f.staff_id, f.finger, f.image_data,
+          s.id, s.name, s.position, s.department, s.employee_code, s.photo, s.status, s.pending_query_note,
+          (SELECT type FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action
+        FROM fingerprints f JOIN staff s ON s.id = f.staff_id WHERE s.status = 'active'
+      `);
+      if (fpRows.length === 0) return res.status(404).json({ success: false, error: 'No enrolled fingerprints', error_code: 'NO_ENROLLED_PRINTS' });
+      const match = await findBestMatch(fingerprintTemplate, fpRows);
+      if (!match) return res.status(404).json({ success: false, error: 'Fingerprint not recognized', error_code: 'NO_MATCH' });
+      const { rows: staffRows } = await client.query(`
+        SELECT id, name, position, department, employee_code, photo, status, pending_query_note,
+          (SELECT type FROM attendance_logs WHERE staff_id = id ORDER BY timestamp DESC LIMIT 1) AS last_action
+        FROM staff WHERE id = $1
+      `, [match.staff_id]);
+      member = staffRows[0];
+      member._match_score = Math.round(match.score * 100);
+    } else {
+      return res.status(400).json({ success: false, error: 'method must be "card" or "fingerprint"', error_code: 'INVALID_METHOD' });
+    }
+
+    if (!member || member.status !== 'active') {
+      return res.status(403).json({ success: false, error: 'Staff account is not active', error_code: 'STAFF_INACTIVE' });
+    }
+
+    const lastAction = member.last_action ?? 'out';
+    const nextAction = requestedAction === 'in' || requestedAction === 'out'
+      ? requestedAction
+      : (lastAction === 'in' ? 'out' : 'in');
+
+    await client.query('BEGIN');
+    const { rows: attRows } = await client.query(
+      `INSERT INTO attendance_logs (staff_id, type, timestamp) VALUES ($1, $2, NOW()) RETURNING id, type, timestamp`,
+      [member.id, nextAction]
+    );
+    const attendance = attRows[0];
+
+    const { rows: settingsRows } = await client.query(`SELECT shift_start, shift_end, late_grace_min FROM attendance_settings LIMIT 1`);
+    const settings = settingsRows[0] || {};
+    const parseTime = (t, def) => { const s = t || def; const [h, m] = s.split(':').map(Number); return [h, m || 0]; };
+    const [shiftStartH, shiftStartM] = parseTime(settings.shift_start, '08:00');
+    const [shiftEndH, shiftEndM] = parseTime(settings.shift_end, '17:00');
+    const lateGraceMin = settings.late_grace_min ?? 0;
+    const expectedShiftHours = ((shiftEndH * 60 + shiftEndM) - (shiftStartH * 60 + shiftStartM)) / 60;
+    const attendanceTime = new Date(attendance.timestamp);
+    let is_late = false;
+    let overtime_hours = 0;
+
+    if (nextAction === 'in') {
+      const shiftStart = new Date(attendanceTime);
+      shiftStart.setHours(shiftStartH, shiftStartM + lateGraceMin, 0, 0);
+      is_late = attendanceTime > shiftStart;
+    } else {
+      const { rows: ciRows } = await client.query(
+        `SELECT timestamp FROM attendance_logs WHERE staff_id = $1 AND type = 'in' AND DATE(timestamp) = DATE($2) ORDER BY timestamp DESC LIMIT 1`,
+        [member.id, attendance.timestamp]
+      );
+      if (ciRows[0]) {
+        const worked = (attendanceTime - new Date(ciRows[0].timestamp)) / (1000 * 60 * 60);
+        overtime_hours = Math.max(0, worked - expectedShiftHours);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    broadcastAttendanceEvent({ id: attendance.id, staff_id: member.id, type: nextAction, timestamp: attendance.timestamp, name: member.name, position: member.position, photo: member.photo });
+
+    res.json({
+      success: true,
+      staff: { id: member.id, name: member.name, position: member.position, department: member.department, employee_code: member.employee_code, photo: member.photo || null },
+      attendance: { id: attendance.id, type: nextAction, timestamp: attendance.timestamp, is_late, overtime_hours: Math.round(overtime_hours * 100) / 100, is_overtime: overtime_hours > 0 },
+      ...(member._match_score !== undefined ? { match_score: member._match_score } : {}),
+      alert_message: nextAction === 'in' && member.pending_query_note ? `Pending query: ${member.pending_query_note}` : null,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[clock] error:', err);
+    res.status(500).json({ success: false, error: 'Failed to record attendance', error_code: 'SERVER_ERROR' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * POST /api/staff/register
+ * Enrolls/updates fingerprint for an existing staff member (lookup by employee_code).
+ * Also updates photo if provided.
+ * Body: { staffId, fullName?, department?, photoBase64?, fingerprintTemplate }
+ */
+router.post('/register', async (req, res) => {
+  const { staffId, photoBase64, fingerprintTemplate } = req.body ?? {};
+
+  if (!staffId) return res.status(400).json({ success: false, error: 'staffId is required', error_code: 'MISSING_STAFF_ID' });
+  if (!fingerprintTemplate) return res.status(400).json({ success: false, error: 'fingerprintTemplate is required', error_code: 'MISSING_FINGERPRINT' });
+
+  const client = await pool.connect();
+  try {
+    // Look up by employee_code first, fall back to numeric id
+    const isNumeric = /^\d+$/.test(String(staffId));
+    const { rows } = await client.query(
+      isNumeric
+        ? `SELECT id, name, employee_code FROM staff WHERE employee_code = $1 OR id = $1::int LIMIT 1`
+        : `SELECT id, name, employee_code FROM staff WHERE employee_code = $1 LIMIT 1`,
+      [staffId]
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, error: 'Staff member not found', error_code: 'NOT_FOUND' });
+    const { id: dbId, name, employee_code } = rows[0];
+
+    await client.query('BEGIN');
+    // Replace all existing fingerprints with the new one
+    await client.query(`DELETE FROM fingerprints WHERE staff_id = $1`, [dbId]);
+    await client.query(`INSERT INTO fingerprints (staff_id, finger, image_data) VALUES ($1, 'right_index', $2)`, [dbId, fingerprintTemplate]);
+
+    if (photoBase64) {
+      await client.query(`UPDATE staff SET photo = $1 WHERE id = $2`, [photoBase64, dbId]);
+    }
+    await client.query('COMMIT');
+
+    res.json({ success: true, staff: { id: dbId, name, employee_code }, message: 'Fingerprint enrolled successfully' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[register] error:', err);
+    res.status(500).json({ success: false, error: 'Enrollment failed', error_code: 'SERVER_ERROR' });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * POST /api/staff/lookup
+ * Look up a staff member by employee_code or numeric id.
+ * Body: { staffId }
+ */
+router.post('/lookup', async (req, res) => {
+  const { staffId } = req.body ?? {};
+  if (!staffId) return res.status(400).json({ success: false, error: 'staffId is required', error_code: 'MISSING_STAFF_ID' });
+
+  try {
+    const isNumeric = /^\d+$/.test(String(staffId));
+    const { rows } = await pool.query(
+      `SELECT s.id, s.name, s.position, s.department, s.employee_code, s.photo, s.status, s.card_uid,
+        COUNT(f.id)::int AS fingerprint_count,
+        (SELECT type FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action,
+        (SELECT timestamp FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action_time
+       FROM staff s LEFT JOIN fingerprints f ON f.staff_id = s.id
+       WHERE ${isNumeric ? 's.employee_code = $1 OR s.id = $1::int' : 's.employee_code = $1'}
+       GROUP BY s.id LIMIT 1`,
+      [staffId]
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, error: 'Staff member not found', error_code: 'NOT_FOUND' });
+    res.json({ success: true, staff: rows[0], last_action: rows[0].last_action, last_action_time: rows[0].last_action_time, timestamp: new Date().toISOString() });
+  } catch (err) {
+    console.error('[lookup] error:', err);
+    res.status(500).json({ success: false, error: 'Lookup failed', error_code: 'SERVER_ERROR' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 
 // PUT /api/staff/:id — update core staff profile details
 router.put('/:id', async (req, res) => {
