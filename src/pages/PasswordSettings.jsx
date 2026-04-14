@@ -6,10 +6,11 @@ const ROLE_LABELS = {
   'staff-access': 'Staff access password',
 };
 
-export default function PasswordSettings() {
+export default function PasswordSettings({ forcedRole }) {
   const { user, changePassword } = useAuth();
-  const availableRoles = user?.roles || (user?.role ? [user.role] : []);
-  const [targetRole, setTargetRole] = useState(availableRoles[0] || 'admin');
+  const userRoles = user?.roles || (user?.role ? [user.role] : []);
+  const availableRoles = forcedRole ? userRoles.filter((role) => role === forcedRole) : userRoles;
+  const [targetRole, setTargetRole] = useState(availableRoles[0] || forcedRole || 'admin');
   const [form, setForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -22,7 +23,7 @@ export default function PasswordSettings() {
     if (!availableRoles.includes(targetRole)) {
       setTargetRole(availableRoles[0] || 'admin');
     }
-  }, [availableRoles, targetRole]);
+  }, [availableRoles, targetRole, forcedRole]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;

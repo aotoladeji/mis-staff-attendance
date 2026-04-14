@@ -51,8 +51,11 @@ function App() {
             <Route path="admin/settings" element={
               <PrivateRoute allowedRoles={['admin']}><AttendanceSettings /></PrivateRoute>
             } />
+            <Route path="staff-access/security" element={
+              <PrivateRoute allowedRoles={['staff-access']}><PasswordSettings forcedRole="staff-access" /></PrivateRoute>
+            } />
             <Route path="security" element={
-              <PrivateRoute allowedRoles={['admin', 'staff-access']}><PasswordSettings /></PrivateRoute>
+              <PrivateRoute allowedRoles={['admin']}><PasswordSettings forcedRole="admin" /></PrivateRoute>
             } />
           </Route>
         </Routes>

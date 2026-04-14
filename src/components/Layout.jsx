@@ -55,6 +55,9 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 p-3 space-y-1">
+          {showStaffControls && (
+            <NavLink to="/staff-access" icon="🔗" label={sidebarOpen ? 'Staff Access' : ''} />
+          )}
           {showAdminControls && (
             <>
               <NavLink to="/admin" icon="📊" label={sidebarOpen ? 'Dashboard' : ''} />
@@ -63,7 +66,8 @@ export default function Layout() {
               <NavLink to="/admin/settings" icon="⚙️" label={sidebarOpen ? 'Settings' : ''} />
             </>
           )}
-          {(showAdminControls || showStaffControls) && <NavLink to="/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
+          {showAdminControls && <NavLink to="/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
+          {showStaffControls && <NavLink to="/staff-access/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
         </nav>
 
         {/* Footer */}
