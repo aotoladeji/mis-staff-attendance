@@ -12,16 +12,31 @@ if (!process.env.DATABASE_URL) {
   console.error('[db] FATAL: DATABASE_URL environment variable is not set.');
 }
 
-// Aiven (and similar hosted PG services) require explicit SSL options in Node.js.
-// The ?sslmode=require param in the URL is not enough — pg needs the ssl object too.
-const sslRequired =
-  process.env.DATABASE_URL?.includes('sslmode=require') ||
-  process.env.DATABASE_URL?.includes('aivencloud') ||
-  process.env.DATABASE_URL?.includes('.aiven.io');
+const createPoolConfig = () => {
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) return {};
+
+  const parsed = new URL(rawUrl);
+  const sslmode = (parsed.searchParams.get('sslmode') || '').toLowerCase();
+  const hostname = (parsed.hostname || '').toLowerCase();
+
+  const sslRequired =
+    sslmode === 'require' ||
+    hostname.includes('aivencloud') ||
+    hostname.includes('.aiven.io');
+
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || 5432),
+    database: parsed.pathname.replace(/^\//, ''),
+    user: decodeURIComponent(parsed.username || ''),
+    password: decodeURIComponent(parsed.password || ''),
+    ...(sslRequired ? { ssl: { rejectUnauthorized: false } } : {}),
+  };
+};
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ...(sslRequired ? { ssl: { rejectUnauthorized: false } } : {}),
+  ...createPoolConfig(),
   // Serverless-friendly: release idle connections quickly
   idleTimeoutMillis: 10000,
   connectionTimeoutMillis: 10000,
