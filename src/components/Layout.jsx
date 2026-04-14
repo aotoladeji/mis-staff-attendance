@@ -27,11 +27,12 @@ export default function Layout() {
   const location = useLocation();
   const onAdminRoute = location.pathname.startsWith('/admin');
   const onStaffRoute = location.pathname.startsWith('/staff-access');
+  const onSecurityRoute = location.pathname.startsWith('/security');
   const hasAdmin = hasRole('admin');
   const hasStaffAccess = hasRole('staff-access');
   const isStaffPortal = onStaffRoute;
   const showAdminControls = hasAdmin && !isStaffPortal;
-  const showStaffControls = hasStaffAccess && isStaffPortal;
+  const showStaffControls = hasStaffAccess && (isStaffPortal || onSecurityRoute);
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100">
