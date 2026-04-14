@@ -63,7 +63,8 @@ const buildIrregularities = (logs) => {
 export default function AdminDashboard() {
   const [staff, setStaff] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [staffCount, setStaffCount] = useState(0);
+  const [staffCount, setStaffCount] = useState(null);
+  const [staffError, setStaffError] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [settings, setSettings] = useState(null);
@@ -73,14 +74,22 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const fetchData = async () => {
-      const [staffRows, cfg] = await Promise.all([
-        getStaff(),
-        getSettings().catch(() => null),
-      ]);
-      setStaff(staffRows);
-      setStaffCount(staffRows.length);
-      setSettings(cfg);
-      setLoading(false);
+      try {
+        const [staffRows, cfg] = await Promise.all([
+          getStaff(),
+          getSettings().catch(() => null),
+        ]);
+        setStaff(staffRows);
+        setStaffCount(staffRows.length);
+        setSettings(cfg);
+        setStaffError('');
+      } catch (err) {
+        setStaff([]);
+        setStaffCount(null);
+        setStaffError(err?.message || 'Failed to load staff data.');
+      } finally {
+        setLoading(false);
+      }
     };
     fetchData();
   }, []);
@@ -156,8 +165,14 @@ export default function AdminDashboard() {
         <p className="text-slate-500 text-sm mt-1">Live attendance overview</p>
       </div>
 
+      {staffError && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {staffError}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon="👥" label="Total Staff" value={staffCount} color="bg-blue-50" />
+        <StatCard icon="👥" label="Total Staff" value={staffCount ?? '--'} color="bg-blue-50" />
         <StatCard icon="→" label="Clocked In Today" value={clockedInToday} color="bg-green-50" />
         <StatCard icon="←" label="Clocked Out Today" value={clockedOutToday} color="bg-rose-50" />
         <StatCard icon="⚠️" label="Late Today" value={lateToday} color="bg-amber-50" />

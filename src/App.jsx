@@ -35,7 +35,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/staff-access/login" element={<StaffAccessLogin />} />
           <Route path="/" element={<Layout />}>
-            <Route index element={<Navigate to="/staff-access/login" replace />} />
+            <Route index element={<Navigate to="/login" replace />} />
             <Route path="staff-access" element={
               <PrivateRoute allowedRoles={['staff-access']}><StaffAccess /></PrivateRoute>
             } />
