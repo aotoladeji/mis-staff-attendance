@@ -293,6 +293,28 @@ router.post('/bulk-import', async (req, res) => {
 // as the existing /api/mobile/* routes but with the body-shape the app sends.
 // ---------------------------------------------------------------------------
 
+const readAny = (payload, keys) => {
+  for (const key of keys) {
+    const value = payload?.[key];
+    if (value !== undefined && value !== null && `${value}`.trim() !== '') return value;
+  }
+  return null;
+};
+
+const normalizeMethod = (value) => {
+  const v = String(value || '').trim().toLowerCase();
+  if (['card', 'nfc', 'rfid', 'carduid', 'card_uid'].includes(v)) return 'card';
+  if (['fingerprint', 'biometric', 'biometrics', 'fp'].includes(v)) return 'fingerprint';
+  return null;
+};
+
+const normalizeAction = (value) => {
+  const v = String(value || '').trim().toLowerCase();
+  if (['in', 'clock_in', 'clock-in', 'checkin', 'check-in', 'clockin'].includes(v)) return 'in';
+  if (['out', 'clock_out', 'clock-out', 'checkout', 'check-out', 'clockout'].includes(v)) return 'out';
+  return null;
+};
+
 /**
  * POST /api/staff/clock
  * Body: { action?, method, cardUid?, fingerprintTemplate?, clientTimestamp? }
@@ -302,21 +324,26 @@ router.post('/bulk-import', async (req, res) => {
  *   fingerprintTemplate = required when method === "fingerprint"
  */
 router.post('/clock', async (req, res) => {
-  const { method, cardUid, fingerprintTemplate, action: requestedAction } = req.body ?? {};
+  const payload = req.body ?? {};
+  const cardUid = String(readAny(payload, ['cardUid', 'card_uid', 'uid', 'nfcUid', 'rfid']) || '').trim();
+  const fingerprintTemplate = String(readAny(payload, ['fingerprintTemplate', 'fingerprint', 'template', 'finger_template']) || '').trim();
+  const normalizedMethod = normalizeMethod(readAny(payload, ['method', 'type']));
+  const method = normalizedMethod || (cardUid ? 'card' : (fingerprintTemplate ? 'fingerprint' : null));
+  const requestedAction = normalizeAction(readAny(payload, ['action', 'attendanceAction', 'clockAction']));
 
   const client = await pool.connect();
   try {
     let member;
 
     if (method === 'card') {
-      if (!cardUid?.trim()) {
+      if (!cardUid) {
         return res.status(400).json({ success: false, error: 'cardUid is required for card method', error_code: 'MISSING_CARD_UID' });
       }
       const { rows } = await client.query(`
         SELECT id, name, position, department, employee_code, photo, status, pending_query_note,
           (SELECT type FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action
         FROM staff s WHERE card_uid = $1
-      `, [cardUid.trim()]);
+      `, [cardUid]);
       if (!rows[0]) return res.status(404).json({ success: false, error: 'Card not registered', error_code: 'CARD_NOT_FOUND' });
       member = rows[0];
     } else if (method === 'fingerprint') {
@@ -413,12 +440,18 @@ router.post('/clock', async (req, res) => {
  * Body: { staffId, fullName?, department?, photoBase64?, fingerprintTemplate }
  */
 router.post('/register', async (req, res) => {
-  const { staffId, photoBase64, fingerprintTemplate } = req.body ?? {};
+  const payload = req.body ?? {};
+  const staffId = String(readAny(payload, ['staffId', 'staff_id', 'employeeCode', 'employee_code', 'code']) || '').trim();
+  const fullName = String(readAny(payload, ['fullName', 'name', 'staffName']) || '').trim();
+  const department = String(readAny(payload, ['department', 'dept', 'unit']) || '').trim();
+  const position = String(readAny(payload, ['position', 'role', 'title']) || 'Staff').trim();
+  const photoBase64 = String(readAny(payload, ['photoBase64', 'photo', 'imageBase64']) || '').trim();
+  const fingerprintTemplate = String(readAny(payload, ['fingerprintTemplate', 'fingerprint', 'template', 'finger_template']) || '').trim();
 
   if (!staffId) return res.status(400).json({ success: false, error: 'staffId is required', error_code: 'MISSING_STAFF_ID' });
-  if (!fingerprintTemplate) return res.status(400).json({ success: false, error: 'fingerprintTemplate is required', error_code: 'MISSING_FINGERPRINT' });
 
   const client = await pool.connect();
+  let inTransaction = false;
   try {
     // Look up by employee_code first, fall back to numeric id
     const isNumeric = /^\d+$/.test(String(staffId));
@@ -428,22 +461,57 @@ router.post('/register', async (req, res) => {
         : `SELECT id, name, employee_code FROM staff WHERE employee_code = $1 LIMIT 1`,
       [staffId]
     );
-    if (!rows[0]) return res.status(404).json({ success: false, error: 'Staff member not found', error_code: 'NOT_FOUND' });
-    const { id: dbId, name, employee_code } = rows[0];
+    let dbId;
+    let name;
+    let employee_code;
+
+    if (!rows[0]) {
+      const { rows: createdRows } = await client.query(
+        `INSERT INTO staff (name, position, employee_code, department, status)
+         VALUES ($1, $2, $3, $4, 'active')
+         RETURNING id, name, employee_code`,
+        [fullName || staffId, position || 'Staff', staffId, department || null]
+      );
+      dbId = createdRows[0].id;
+      name = createdRows[0].name;
+      employee_code = createdRows[0].employee_code;
+    } else {
+      dbId = rows[0].id;
+      name = rows[0].name;
+      employee_code = rows[0].employee_code;
+
+      // Update profile metadata when provided
+      await client.query(
+        `UPDATE staff
+         SET name = COALESCE(NULLIF($1, ''), name),
+             department = COALESCE(NULLIF($2, ''), department),
+             position = COALESCE(NULLIF($3, ''), position)
+         WHERE id = $4`,
+        [fullName, department, position, dbId]
+      );
+    }
 
     await client.query('BEGIN');
-    // Replace all existing fingerprints with the new one
-    await client.query(`DELETE FROM fingerprints WHERE staff_id = $1`, [dbId]);
-    await client.query(`INSERT INTO fingerprints (staff_id, finger, image_data) VALUES ($1, 'right_index', $2)`, [dbId, fingerprintTemplate]);
+    inTransaction = true;
+    if (fingerprintTemplate) {
+      // Replace all existing fingerprints with the new one
+      await client.query(`DELETE FROM fingerprints WHERE staff_id = $1`, [dbId]);
+      await client.query(`INSERT INTO fingerprints (staff_id, finger, image_data) VALUES ($1, 'right_index', $2)`, [dbId, fingerprintTemplate]);
+    }
 
     if (photoBase64) {
       await client.query(`UPDATE staff SET photo = $1 WHERE id = $2`, [photoBase64, dbId]);
     }
     await client.query('COMMIT');
+    inTransaction = false;
 
-    res.json({ success: true, staff: { id: dbId, name, employee_code }, message: 'Fingerprint enrolled successfully' });
+    res.json({
+      success: true,
+      staff: { id: dbId, name: fullName || name, employee_code },
+      message: fingerprintTemplate ? 'Fingerprint enrolled successfully' : 'Staff profile registered (no fingerprint supplied)',
+    });
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (inTransaction) await client.query('ROLLBACK');
     console.error('[register] error:', err);
     res.status(500).json({ success: false, error: 'Enrollment failed', error_code: 'SERVER_ERROR' });
   } finally {
@@ -457,7 +525,8 @@ router.post('/register', async (req, res) => {
  * Body: { staffId }
  */
 router.post('/lookup', async (req, res) => {
-  const { staffId } = req.body ?? {};
+  const payload = req.body ?? {};
+  const staffId = String(readAny(payload, ['staffId', 'staff_id', 'employeeCode', 'employee_code', 'code']) || '').trim();
   if (!staffId) return res.status(400).json({ success: false, error: 'staffId is required', error_code: 'MISSING_STAFF_ID' });
 
   try {
@@ -472,7 +541,15 @@ router.post('/lookup', async (req, res) => {
        GROUP BY s.id LIMIT 1`,
       [staffId]
     );
-    if (!rows[0]) return res.status(404).json({ success: false, error: 'Staff member not found', error_code: 'NOT_FOUND' });
+    if (!rows[0]) {
+      return res.json({
+        success: false,
+        found: false,
+        error: 'Staff member not found',
+        error_code: 'NOT_FOUND',
+        timestamp: new Date().toISOString(),
+      });
+    }
     res.json({ success: true, staff: rows[0], last_action: rows[0].last_action, last_action_time: rows[0].last_action_time, timestamp: new Date().toISOString() });
   } catch (err) {
     console.error('[lookup] error:', err);
