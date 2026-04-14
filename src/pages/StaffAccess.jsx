@@ -17,7 +17,12 @@ const emptyForm = {
   photo: '',
 };
 
-const normalizeHeader = (value) => String(value || '').trim().toLowerCase();
+const normalizeHeader = (value) => String(value || '')
+  .replace(/^\uFEFF/, '')
+  .trim()
+  .toLowerCase()
+  .replace(/[_\-./\\]/g, ' ')
+  .replace(/\s+/g, ' ');
 
 const getCellValue = (row, candidates) => {
   for (const candidate of candidates) {
@@ -31,13 +36,58 @@ const getCellValue = (row, candidates) => {
   return '';
 };
 
+const findHeaderRowIndex = (rows2d) => {
+  const nameAliases = ['name', 'full name', 'staff name', 'firstname', 'first name'];
+  const positionAliases = ['position', 'role', 'title', 'designation', 'job title'];
+
+  const maxScan = Math.min(rows2d.length, 12);
+  for (let index = 0; index < maxScan; index += 1) {
+    const row = rows2d[index] || [];
+    const normalized = row.map(normalizeHeader).filter(Boolean);
+    const hasName = normalized.some((value) => nameAliases.includes(value));
+    const hasPosition = normalized.some((value) => positionAliases.includes(value));
+    if (hasName && hasPosition) return index;
+  }
+
+  return 0;
+};
+
+const rowsFromWorksheet = (sheet) => {
+  const matrix = XLSX.utils.sheet_to_json(sheet, {
+    header: 1,
+    defval: '',
+    blankrows: false,
+    raw: false,
+  });
+
+  if (!Array.isArray(matrix) || matrix.length === 0) return [];
+
+  const headerIndex = findHeaderRowIndex(matrix);
+  const header = (matrix[headerIndex] || []).map((cell) => String(cell || '').trim());
+  const dataRows = matrix.slice(headerIndex + 1);
+
+  return dataRows
+    .map((row) => {
+      const entry = {};
+      header.forEach((columnName, idx) => {
+        if (!columnName) return;
+        entry[columnName] = row[idx] ?? '';
+      });
+      return entry;
+    })
+    .filter((row) => Object.values(row).some((value) => String(value || '').trim() !== ''));
+};
+
 const mapSpreadsheetRow = (row) => ({
-  name: String(getCellValue(row, ['name', 'full name', 'staff name']) || '').trim(),
-  position: String(getCellValue(row, ['position', 'role', 'title']) || '').trim(),
+  name: String(
+    getCellValue(row, ['name', 'full name', 'staff name', 'first name']) ||
+    `${getCellValue(row, ['first name', 'firstname']) || ''} ${getCellValue(row, ['last name', 'lastname', 'surname']) || ''}`
+  ).trim(),
+  position: String(getCellValue(row, ['position', 'role', 'title', 'designation', 'job title']) || '').trim(),
   employee_code: String(getCellValue(row, ['employee code', 'staff id', 'code', 'employee_id']) || '').trim(),
   department: String(getCellValue(row, ['department', 'team', 'unit']) || '').trim(),
   email: String(getCellValue(row, ['email', 'email address']) || '').trim(),
-  phone: String(getCellValue(row, ['phone', 'phone number', 'mobile']) || '').trim(),
+  phone: String(getCellValue(row, ['phone', 'phone number', 'mobile', 'mobile number']) || '').trim(),
   card_uid: String(getCellValue(row, ['card uid', 'card_uid', 'rfid', 'nfc uid']) || '').trim(),
   status: String(getCellValue(row, ['status']) || 'active').trim() || 'active',
   notes: String(getCellValue(row, ['notes', 'remark', 'remarks']) || '').trim(),
@@ -125,11 +175,12 @@ export default function StaffAccess() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+      const rows = rowsFromWorksheet(firstSheet);
       const mappedRows = rows.map(mapSpreadsheetRow).filter((row) => row.name && row.position);
 
       if (mappedRows.length === 0) {
-        throw new Error('The file did not contain any rows with at least name and position columns.');
+        const detectedHeaders = rows[0] ? Object.keys(rows[0]).join(', ') : 'none';
+        throw new Error(`The file did not contain any rows with at least name and position columns. Detected headers: ${detectedHeaders}`);
       }
 
       const result = await bulkImportStaff(mappedRows);
