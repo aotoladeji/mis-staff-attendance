@@ -13,6 +13,7 @@ import staffRouter from './routes/staff.js';
 import attendanceRouter from './routes/attendance.js';
 import settingsRouter from './routes/settings.js';
 import mobileRouter from './routes/mobile.js';
+import { pool } from './db.js';
 
 // Load .env for local dev. On Vercel, env vars are injected directly — this is a no-op.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -113,5 +114,30 @@ app.post('/api/fingerprint/capture', async (req, res) => {
 });
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
+// Diagnostic endpoint — safe to leave public, reveals no secrets
+app.get('/api/debug', async (_req, res) => {
+  const dbUrl = process.env.DATABASE_URL;
+  const envStatus = {
+    DATABASE_URL: dbUrl ? `set (${dbUrl.split('@')[1]?.split('/')[0] ?? 'unknown host'})` : 'NOT SET',
+  };
+
+  let dbStatus = 'unknown';
+  let dbError = null;
+  try {
+    const { rows } = await pool.query('SELECT 1 AS ok');
+    dbStatus = rows[0]?.ok === 1 ? 'connected' : 'unexpected result';
+  } catch (err) {
+    dbStatus = 'error';
+    dbError = err.message;
+  }
+
+  res.json({
+    status: 'ok',
+    env: envStatus,
+    db: { status: dbStatus, ...(dbError ? { error: dbError } : {}) },
+    timestamp: new Date().toISOString(),
+  });
+});
 
 export default app;

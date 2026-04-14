@@ -8,8 +8,24 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const { Pool } = pg;
 
+if (!process.env.DATABASE_URL) {
+  console.error('[db] FATAL: DATABASE_URL environment variable is not set.');
+}
+
+// Aiven (and similar hosted PG services) require explicit SSL options in Node.js.
+// The ?sslmode=require param in the URL is not enough — pg needs the ssl object too.
+const sslRequired =
+  process.env.DATABASE_URL?.includes('sslmode=require') ||
+  process.env.DATABASE_URL?.includes('aivencloud') ||
+  process.env.DATABASE_URL?.includes('.aiven.io');
+
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  ...(sslRequired ? { ssl: { rejectUnauthorized: false } } : {}),
+  // Serverless-friendly: release idle connections quickly
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 10000,
+  max: 3,
 });
 
 /**

@@ -92,12 +92,9 @@ router.get('/', async (req, res) => {
     const { rows } = await pool.query(`${staffSelect} ${groupAndOrderStaff}`);
     res.json(rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch staff' });
+    console.error('[staff GET]', err.message);
+    res.status(500).json({ error: 'Failed to fetch staff', detail: err.message });
   }
-});
-
-/**
  * POST /api/staff/verify
  * Body: { image: "<base64 JPEG from ZK device>" }
  * Compares the live fingerprint against every enrolled fingerprint in the DB.

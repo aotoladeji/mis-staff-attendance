@@ -9,8 +9,8 @@ router.get('/', async (_req, res) => {
     const { rows } = await pool.query('SELECT * FROM attendance_settings WHERE id = 1');
     res.json(rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch settings' });
+    console.error('[settings GET]', err.message);
+    res.status(500).json({ error: 'Failed to fetch settings', detail: err.message });
   }
 });
 
@@ -32,8 +32,8 @@ router.put('/', async (req, res) => {
     );
     res.json(rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to update settings' });
+    console.error('[settings PUT]', err.message);
+    res.status(500).json({ error: 'Failed to update settings', detail: err.message });
   }
 });
 
