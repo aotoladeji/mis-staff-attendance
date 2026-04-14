@@ -1,0 +1,4 @@
+name,position,employee_code,department,email,phone,card_uid,status,notes,photo
+Aisha Bello,Network Engineer,EMP001,ICT,aisha.bello@example.com,+2348012345678,04A1B2C3D4,active,Sample active staff,
+Tunde Okoro,System Analyst,EMP002,Operations,tunde.okoro@example.com,+2348098765432,7F55AA1023,active,Sample second record,
+Mariam Yusuf,Support Officer,EMP003,Support,mariam.yusuf@example.com,+2348031112233,,pending,Pending onboarding; card UID to be assigned,

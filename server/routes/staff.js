@@ -236,8 +236,9 @@ router.post('/bulk-import', async (req, res) => {
                phone = $6,
                status = $7,
                notes = $8,
-               photo = COALESCE($9, photo)
-           WHERE id = $10`,
+               photo = COALESCE($9, photo),
+               card_uid = $10
+           WHERE id = $11`,
           [
             staff.name,
             staff.position,
@@ -248,14 +249,15 @@ router.post('/bulk-import', async (req, res) => {
             staff.status,
             staff.notes,
             staff.photo,
+            staff.card_uid,
             existing.id,
           ]
         );
         updated += 1;
       } else {
         await client.query(
-          `INSERT INTO staff (name, position, employee_code, department, email, phone, status, notes, photo)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          `INSERT INTO staff (name, position, employee_code, department, email, phone, status, notes, photo, card_uid)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
           [
             staff.name,
             staff.position,
@@ -266,6 +268,7 @@ router.post('/bulk-import', async (req, res) => {
             staff.status,
             staff.notes,
             staff.photo,
+            staff.card_uid,
           ]
         );
         created += 1;

@@ -22,14 +22,16 @@ const NavLink = ({ to, icon, label }) => {
 };
 
 export default function Layout() {
-  const { user, logout, logoutRole, hasRole } = useAuth();
+  const { user, logoutRole, hasRole } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const location = useLocation();
   const onAdminRoute = location.pathname.startsWith('/admin');
   const onStaffRoute = location.pathname.startsWith('/staff-access');
   const hasAdmin = hasRole('admin');
   const hasStaffAccess = hasRole('staff-access');
-  const activeSessionCount = Number(hasAdmin) + Number(hasStaffAccess);
+  const isStaffPortal = onStaffRoute;
+  const showAdminControls = hasAdmin && !isStaffPortal;
+  const showStaffControls = hasStaffAccess && isStaffPortal;
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-100">
@@ -52,10 +54,10 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 p-3 space-y-1">
-          {hasStaffAccess && (
+          {showStaffControls && (
             <NavLink to="/staff-access" icon="🔗" label={sidebarOpen ? 'Staff Access' : ''} />
           )}
-          {hasAdmin && (
+          {showAdminControls && (
             <>
               <NavLink to="/admin" icon="📊" label={sidebarOpen ? 'Dashboard' : ''} />
               <NavLink to="/admin/attendance" icon="📋" label={sidebarOpen ? 'Attendance' : ''} />
@@ -63,14 +65,14 @@ export default function Layout() {
               <NavLink to="/admin/settings" icon="⚙️" label={sidebarOpen ? 'Settings' : ''} />
             </>
           )}
-          {user && <NavLink to="/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
+          {showAdminControls && <NavLink to="/security" icon="🔐" label={sidebarOpen ? 'Security' : ''} />}
         </nav>
 
         {/* Footer */}
         <div className="p-3 border-t border-slate-700">
           {user ? (
             <div className="space-y-1">
-              {hasAdmin && (
+              {showAdminControls && (
                 <button
                   onClick={() => logoutRole('admin')}
                   className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-600 hover:text-white transition-all"
@@ -79,22 +81,13 @@ export default function Layout() {
                   {sidebarOpen && 'Logout Admin'}
                 </button>
               )}
-              {hasStaffAccess && (
+              {showStaffControls && (
                 <button
                   onClick={() => logoutRole('staff-access')}
                   className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-600 hover:text-white transition-all"
                 >
                   <span className="text-lg">🔗</span>
                   {sidebarOpen && 'Logout Staff Access'}
-                </button>
-              )}
-              {(hasAdmin && hasStaffAccess) && (
-                <button
-                  onClick={logout}
-                  className="flex items-center gap-3 w-full px-4 py-3 rounded-lg text-sm font-medium text-slate-300 hover:bg-red-700 hover:text-white transition-all border border-slate-600"
-                >
-                  <span className="text-lg">🚪</span>
-                  {sidebarOpen && 'Logout All'}
                 </button>
               )}
             </div>
@@ -131,37 +124,20 @@ export default function Layout() {
                 <p className="text-xs text-slate-400">Operations portal</p>
               </div>
             </div>
-            {user && (
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-200 bg-slate-50">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  Active Sessions: {activeSessionCount}
-                </span>
-                {hasAdmin && (
-                  <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                    Admin
-                  </span>
-                )}
-                {hasStaffAccess && (
-                  <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-[11px] font-semibold px-2 py-0.5 rounded-full">
-                    Staff Access
-                  </span>
-                )}
-              </div>
-            )}
-            {hasAdmin && (onAdminRoute || !onStaffRoute) && (
+            {showAdminControls && (
               <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 text-xs font-semibold px-3 py-1 rounded-full border border-blue-200">
                 🛡️ Administrator
               </span>
             )}
-            {hasStaffAccess && onStaffRoute && (
+            {showStaffControls && (
               <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full border border-emerald-200">
                 🔗 Staff Access
               </span>
             )}
             <div className="w-8 h-8 bg-slate-200 rounded-full flex items-center justify-center text-slate-600 text-sm font-bold">
-              {hasAdmin && (onAdminRoute || !onStaffRoute)
+              {showAdminControls
                 ? 'A'
-                : hasStaffAccess
+                : showStaffControls
                   ? 'S'
                   : '?'}
             </div>

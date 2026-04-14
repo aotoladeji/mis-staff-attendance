@@ -38,6 +38,7 @@ const mapSpreadsheetRow = (row) => ({
   department: String(getCellValue(row, ['department', 'team', 'unit']) || '').trim(),
   email: String(getCellValue(row, ['email', 'email address']) || '').trim(),
   phone: String(getCellValue(row, ['phone', 'phone number', 'mobile']) || '').trim(),
+  card_uid: String(getCellValue(row, ['card uid', 'card_uid', 'rfid', 'nfc uid']) || '').trim(),
   status: String(getCellValue(row, ['status']) || 'active').trim() || 'active',
   notes: String(getCellValue(row, ['notes', 'remark', 'remarks']) || '').trim(),
   photo: String(getCellValue(row, ['photo', 'photo base64']) || '').trim(),
@@ -239,6 +240,13 @@ export default function StaffAccess() {
                   className="hidden"
                 />
               </label>
+              <a
+                href="/samples/staff-import-template.xlsx"
+                download
+                className="px-5 py-3 rounded-2xl bg-white text-slate-700 font-bold text-sm border border-slate-200 hover:bg-slate-50"
+              >
+                Download Excel template
+              </a>
             </div>
             {notice && <div className="rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">{notice}</div>}
             {error && <div className="rounded-2xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
@@ -323,6 +331,7 @@ export default function StaffAccess() {
         staff={selectedStaff}
         onClose={() => setSelectedStaff(null)}
         onSave={handleSaveStaff}
+        showAttendanceHistory={false}
       />
 
       {showCreateModal && (

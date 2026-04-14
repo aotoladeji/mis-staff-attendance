@@ -34,7 +34,7 @@ const csvEscape = (value) => {
   return `"${text.replaceAll('"', '""')}"`;
 };
 
-export default function StaffProfileModal({ staff, onClose, onSave }) {
+export default function StaffProfileModal({ staff, onClose, onSave, showAttendanceHistory = true }) {
   const [form, setForm] = useState(() => toFormState(staff));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -52,6 +52,7 @@ export default function StaffProfileModal({ staff, onClose, onSave }) {
   }, [staff]);
 
   useEffect(() => {
+    if (!showAttendanceHistory) return;
     if (!staff?.id) return;
 
     const loadHistory = async () => {
@@ -67,7 +68,7 @@ export default function StaffProfileModal({ staff, onClose, onSave }) {
     };
 
     loadHistory();
-  }, [staff, historyRange]);
+  }, [staff, historyRange, showAttendanceHistory]);
 
   if (!staff) return null;
 
@@ -331,6 +332,7 @@ export default function StaffProfileModal({ staff, onClose, onSave }) {
             </aside>
           </div>
 
+          {showAttendanceHistory && (
           <section className="rounded-[1.5rem] border border-slate-200 overflow-hidden">
             <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap">
               <div>
@@ -397,6 +399,7 @@ export default function StaffProfileModal({ staff, onClose, onSave }) {
               </div>
             )}
           </section>
+          )}
         </div>
       </div>
     </div>
