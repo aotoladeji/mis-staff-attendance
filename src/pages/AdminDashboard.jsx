@@ -139,9 +139,13 @@ export default function AdminDashboard() {
 
   const today = new Date().toDateString();
   const todayLogs = logs.filter((l) => new Date(l.timestamp).toDateString() === today);
-  const clockedInToday = todayLogs.filter((l) => l.type === 'in').length;
-  const clockedOutToday = todayLogs.filter((l) => l.type === 'out').length;
-  const lateToday = todayLogs.filter((l) => l.type === 'in' && isLate(l.timestamp, settings)).length;
+  const clockedInToday = new Set(todayLogs.filter((l) => l.type === 'in').map((l) => l.staff_id)).size;
+  const clockedOutToday = new Set(todayLogs.filter((l) => l.type === 'out').map((l) => l.staff_id)).size;
+  const lateToday = new Set(
+    todayLogs
+      .filter((l) => l.type === 'in' && isLate(l.timestamp, settings))
+      .map((l) => l.staff_id)
+  ).size;
   const pendingQueries = staff.filter((s) => !!s.pending_query_note).length;
   const irregularities = buildIrregularities(logs);
   const periodLabel = selectedRange === 'week' ? 'Last 7 days' : selectedRange === 'month' ? 'Last month' : 'All time';
