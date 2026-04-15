@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { bulkImportStaff, createStaff, getStaff, updateStaff } from '../api/staffService';
 import StaffProfileModal from '../components/StaffProfileModal';
+
+const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase() || '?';
 import { BRAND_LOGO_PATH, BRAND_NAME } from '../config/branding';
 
 const emptyForm = {
@@ -343,7 +345,7 @@ export default function StaffAccess() {
                       <img src={photoSrc} alt={member.name} className="w-16 h-16 rounded-2xl object-cover" />
                     ) : (
                       <div className="w-16 h-16 rounded-2xl bg-sky-100 text-sky-700 flex items-center justify-center font-black text-xl">
-                        {member.name.charAt(0)}
+                        {getInitial(member.name)}
                       </div>
                     )}
                     <div className="min-w-0">

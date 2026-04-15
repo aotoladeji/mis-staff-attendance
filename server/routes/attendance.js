@@ -66,8 +66,8 @@ router.get('/', async (req, res) => {
         al.staff_id,
         al.type,
         al.timestamp,
-        s.name,
-        s.position,
+        COALESCE(s.name, 'Unknown Staff') AS name,
+        COALESCE(s.position, 'Not assigned') AS position,
         s.photo
       FROM attendance_logs al
       LEFT JOIN staff s ON s.id = al.staff_id
@@ -136,7 +136,10 @@ router.post('/', async (req, res) => {
 
     // Broadcast to all SSE-connected dashboard clients
     const { rows: broadcastRows } = await pool.query(
-      `SELECT al.id, al.staff_id, al.type, al.timestamp, s.name, s.position, s.photo
+      `SELECT al.id, al.staff_id, al.type, al.timestamp,
+              COALESCE(s.name, 'Unknown Staff') AS name,
+              COALESCE(s.position, 'Not assigned') AS position,
+              s.photo
        FROM attendance_logs al
        LEFT JOIN staff s ON s.id = al.staff_id
        WHERE al.id = $1`,

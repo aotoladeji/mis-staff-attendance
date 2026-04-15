@@ -26,6 +26,8 @@ const fmt = (iso) =>
     minute: '2-digit',
   });
 
+const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase() || '?';
+
 const buildIrregularities = (logs) => {
   const byStaff = new Map();
   for (const log of logs) {
@@ -323,7 +325,7 @@ export default function AdminDashboard() {
                           <img src={log.photo.startsWith('data:') ? log.photo : `data:image/jpeg;base64,${log.photo}`} alt={log.name} className="w-8 h-8 rounded-full object-cover" />
                         ) : (
                           <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
-                            {log.name.charAt(0)}
+                            {getInitial(log.name)}
                           </div>
                         )}
                         <button
@@ -334,7 +336,7 @@ export default function AdminDashboard() {
                           }}
                           className="font-medium text-slate-800 hover:text-blue-600"
                         >
-                          {log.name}
+                          {log.name || 'Unknown Staff'}
                         </button>
                       </div>
                     </td>

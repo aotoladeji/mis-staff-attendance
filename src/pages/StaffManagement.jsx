@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from 'react';
 import { getStaff, deleteStaff, updatePendingQuery, updateStaff } from '../api/staffService';
 import StaffProfileModal from '../components/StaffProfileModal';
+const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase() || '?';
 
 export default function StaffManagement() {
   const [staff, setStaff] = useState([]);
@@ -135,7 +136,7 @@ export default function StaffManagement() {
                           <img src={s.photo.startsWith('data:') ? s.photo : `data:image/jpeg;base64,${s.photo}`} alt={s.name} className="w-9 h-9 rounded-full object-cover" />
                         ) : (
                           <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm">
-                            {s.name.charAt(0)}
+                            {getInitial(s.name)}
                           </div>
                         )}
                         <span className="font-medium text-slate-800 hover:text-blue-600">{s.name}</span>

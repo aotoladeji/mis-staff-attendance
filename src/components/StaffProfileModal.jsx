@@ -6,6 +6,8 @@ const toPhotoSrc = (photo) => {
   return photo.startsWith('data:') ? photo : `data:image/jpeg;base64,${photo}`;
 };
 
+const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase() || '?';
+
 const toFormState = (staff) => ({
   name: staff?.name || '',
   position: staff?.position || '',
@@ -150,7 +152,7 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
                 <img src={photoSrc} alt={staff.name} className="w-20 h-20 rounded-3xl object-cover border border-white/20 shadow-lg" />
               ) : (
                 <div className="w-20 h-20 rounded-3xl bg-white/10 border border-white/20 flex items-center justify-center text-3xl font-bold">
-                  {staff.name.charAt(0)}
+                  {getInitial(staff.name)}
                 </div>
               )}
               <div>
@@ -245,7 +247,7 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
                       <img src={photoSrc} alt={staff.name} className="w-16 h-16 rounded-2xl object-cover" />
                     ) : (
                       <div className="w-16 h-16 rounded-2xl bg-slate-200 flex items-center justify-center text-slate-500 font-bold">
-                        {staff.name.charAt(0)}
+                        {getInitial(staff.name)}
                       </div>
                     )}
                     {editing ? (
