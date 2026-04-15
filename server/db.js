@@ -119,6 +119,19 @@ export const initDB = async () => {
       timestamp  TIMESTAMPTZ  DEFAULT NOW()
     );
 
+    ALTER TABLE attendance_logs
+      DROP CONSTRAINT IF EXISTS attendance_logs_staff_id_fkey;
+
+    ALTER TABLE attendance_logs
+      ADD CONSTRAINT attendance_logs_staff_id_fkey
+      FOREIGN KEY (staff_id)
+      REFERENCES staff(id)
+      ON DELETE CASCADE;
+
+    DELETE FROM attendance_logs al
+      WHERE al.staff_id IS NULL
+         OR NOT EXISTS (SELECT 1 FROM staff s WHERE s.id = al.staff_id);
+
     CREATE INDEX IF NOT EXISTS idx_attendance_staff_id
       ON attendance_logs(staff_id);
 
