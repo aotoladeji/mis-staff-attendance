@@ -621,14 +621,34 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/staff/:id — removes staff + cascades to fingerprints and sets attendance logs staff_id to null
+// DELETE /api/staff/:id — removes staff and all related attendance/fingerprint records
 router.delete('/:id', async (req, res) => {
+  const staffId = Number.parseInt(req.params.id, 10);
+  if (Number.isNaN(staffId) || staffId <= 0) {
+    return res.status(400).json({ error: 'Invalid staff id' });
+  }
+
+  const client = await pool.connect();
   try {
-    await pool.query('DELETE FROM staff WHERE id = $1', [req.params.id]);
+    await client.query('BEGIN');
+
+    const { rowCount } = await client.query('SELECT 1 FROM staff WHERE id = $1', [staffId]);
+    if (!rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Staff not found' });
+    }
+
+    await client.query('DELETE FROM attendance_logs WHERE staff_id = $1', [staffId]);
+    await client.query('DELETE FROM staff WHERE id = $1', [staffId]);
+
+    await client.query('COMMIT');
     res.status(204).end();
   } catch (err) {
+    await client.query('ROLLBACK');
     console.error(err);
     res.status(500).json({ error: 'Failed to delete staff' });
+  } finally {
+    client.release();
   }
 });
 
