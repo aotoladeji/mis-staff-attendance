@@ -6,9 +6,8 @@ import { buildOvertimeLookup, isLate } from '../utils/attendanceStatus';
 import StaffProfileModal from '../components/StaffProfileModal';
 
 const CATEGORY_OPTIONS = [
-  { value: 'today', label: 'Today', description: 'Fresh daily page. Resets every new day.' },
-  { value: 'history', label: 'History', description: 'Previous days only. Browse archived logs.' },
-  { value: 'live', label: 'Live Reading', description: 'Latest 24 hours, auto-refreshing feed' },
+  { value: 'today', label: 'Today', description: 'Resets every new day.' },
+  { value: 'history', label: 'History', description: 'Browse archived logs.' },
   { value: 'week', label: 'Weekly', description: 'Last 7 days of logs' },
   { value: 'month', label: 'Monthly', description: 'Last 30 days of logs' },
   { value: 'yearly', label: 'Yearly', description: 'Last 12 months of logs' },
