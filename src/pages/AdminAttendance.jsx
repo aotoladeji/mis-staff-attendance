@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { getAttendanceLogs } from '../api/attendanceService';
 import { getStaff, updateStaff } from '../api/staffService';
 import { getSettings } from '../api/settingsService';
-import { isLate, isOvertime } from '../utils/attendanceStatus';
+import { buildOvertimeLookup, isLate } from '../utils/attendanceStatus';
 import StaffProfileModal from '../components/StaffProfileModal';
 
 const CATEGORY_OPTIONS = [
+  { value: 'today', label: 'Today', description: 'Fresh daily page. Resets every new day.' },
+  { value: 'history', label: 'History', description: 'Previous days only. Browse archived logs.' },
   { value: 'live', label: 'Live Reading', description: 'Latest 24 hours, auto-refreshing feed' },
-  { value: 'daily', label: 'Daily', description: 'Today\'s attendance records' },
   { value: 'week', label: 'Weekly', description: 'Last 7 days of logs' },
   { value: 'month', label: 'Monthly', description: 'Last 30 days of logs' },
   { value: 'yearly', label: 'Yearly', description: 'Last 12 months of logs' },
 ];
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 const formatTimestamp = (value) =>
   new Date(value).toLocaleString('en-US', {
@@ -22,10 +25,26 @@ const formatTimestamp = (value) =>
     minute: '2-digit',
   });
 
+const formatDateHeader = (value) =>
+  new Date(value).toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+
+const getDateKey = (value) => {
+  const date = new Date(value);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase() || '?';
 
 export default function AdminAttendance() {
-  const [category, setCategory] = useState('live');
+  const [category, setCategory] = useState('today');
   const [logs, setLogs] = useState([]);
   const [staff, setStaff] = useState([]);
   const [settings, setSettings] = useState(null);
@@ -33,6 +52,16 @@ export default function AdminAttendance() {
   const [error, setError] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState(null);
   const [profileStaff, setProfileStaff] = useState(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 1,
+    hasPrev: false,
+    hasNext: false,
+  });
 
   useEffect(() => {
     const loadStaticData = async () => {
@@ -58,11 +87,28 @@ export default function AdminAttendance() {
       setLoading(true);
       setError('');
       try {
-        const rows = await getAttendanceLogs({
+        const payload = await getAttendanceLogs({
           staffId: selectedStaffId ?? undefined,
           range: category,
+          page,
+          pageSize,
+          paged: true,
         });
+        const rows = Array.isArray(payload) ? payload : payload?.data || [];
+        const pageInfo = payload?.pagination;
         setLogs(rows);
+        if (pageInfo) {
+          setPagination(pageInfo);
+        } else {
+          setPagination({
+            page,
+            pageSize,
+            total: rows.length,
+            totalPages: 1,
+            hasPrev: false,
+            hasNext: false,
+          });
+        }
       } catch (loadError) {
         setError(loadError.message || 'Failed to fetch attendance logs.');
       } finally {
@@ -72,7 +118,7 @@ export default function AdminAttendance() {
 
     loadLogs();
 
-    if (category === 'live') {
+    if (category === 'today' || category === 'live') {
       intervalId = window.setInterval(loadLogs, 15000);
     }
 
@@ -81,16 +127,51 @@ export default function AdminAttendance() {
         window.clearInterval(intervalId);
       }
     };
-  }, [category, selectedStaffId]);
+  }, [category, selectedStaffId, page, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [category, selectedStaffId, pageSize]);
 
   const selectedCategory = CATEGORY_OPTIONS.find((option) => option.value === category);
   const selectedStaff = selectedStaffId ? staff.find((member) => member.id === selectedStaffId) : null;
+  const overtimeLogIds = useMemo(() => buildOvertimeLookup(logs, settings), [logs, settings]);
+  const todayLabel = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const pageStart = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.pageSize + 1;
+  const pageEnd = pagination.total === 0 ? 0 : pageStart + logs.length - 1;
+  const groupedHistoryLogs = useMemo(() => {
+    if (category !== 'history') return [];
+
+    const groups = [];
+    const byDate = new Map();
+
+    for (const log of logs) {
+      const dateKey = getDateKey(log.timestamp);
+      if (!byDate.has(dateKey)) {
+        const group = {
+          key: dateKey,
+          label: formatDateHeader(log.timestamp),
+          items: [],
+        };
+        byDate.set(dateKey, group);
+        groups.push(group);
+      }
+      byDate.get(dateKey).items.push(log);
+    }
+
+    return groups;
+  }, [category, logs]);
 
   const stats = useMemo(() => {
     const inCount = logs.filter((log) => log.type === 'in').length;
     const outCount = logs.filter((log) => log.type === 'out').length;
     const lateCount = logs.filter((log) => log.type === 'in' && isLate(log.timestamp, settings)).length;
-    const overtimeCount = logs.filter((log) => log.type === 'out' && isOvertime(log.timestamp, settings)).length;
+    const overtimeCount = logs.filter((log) => log.type === 'out' && overtimeLogIds.has(log.id)).length;
 
     return [
       { label: 'Total Readings', value: logs.length, tone: 'bg-slate-100 text-slate-700' },
@@ -98,7 +179,7 @@ export default function AdminAttendance() {
       { label: 'Clock Out', value: outCount, tone: 'bg-rose-100 text-rose-700' },
       { label: 'Flags', value: lateCount + overtimeCount, tone: 'bg-amber-100 text-amber-700' },
     ];
-  }, [logs, settings]);
+  }, [logs, settings, overtimeLogIds]);
 
   const handleSaveStaff = async (updates) => {
     const saved = await updateStaff(profileStaff.id, updates);
@@ -116,10 +197,10 @@ export default function AdminAttendance() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-800">Attendance Categories</h1>
-        <p className="text-slate-500 text-sm mt-1">Review attendance logs by live reading, daily, weekly, monthly, and yearly windows.</p>
+        <p className="text-slate-500 text-sm mt-1">Today opens a fresh page each day, while older records stay in history with paging.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
         {CATEGORY_OPTIONS.map((option) => (
           <button
             key={option.value}
@@ -150,10 +231,15 @@ export default function AdminAttendance() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h2 className="text-lg font-bold text-slate-900">{selectedCategory?.label}</h2>
-            <p className="text-sm text-slate-500">{selectedCategory?.description}</p>
+            <p className="text-sm text-slate-500">
+              {selectedCategory?.description}
+              {category === 'today' ? ` · ${todayLabel}` : ''}
+            </p>
           </div>
           <span className="text-xs font-semibold text-slate-400">
-            {category === 'live' ? 'Auto-refreshes every 15 seconds' : `${logs.length} records`}
+            {(category === 'today' || category === 'live')
+              ? 'Auto-refreshes every 15 seconds'
+              : `${pagination.total} records`}
           </span>
         </div>
 
@@ -191,7 +277,43 @@ export default function AdminAttendance() {
           <h2 className="text-slate-800 font-bold text-base">
             {selectedCategory?.label} Log {selectedStaff ? `· ${selectedStaff.name}` : ''}
           </h2>
-          <span className="text-xs text-slate-400">{logs.length} records</span>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-400">Per page</label>
+            <select
+              value={pageSize}
+              onChange={(event) => setPageSize(Number(event.target.value))}
+              className="text-xs rounded-lg border border-slate-200 px-2 py-1 text-slate-600"
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="px-6 py-3 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-xs text-slate-500">
+            Showing {pageStart}-{pageEnd} of {pagination.total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={!pagination.hasPrev || loading}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-slate-500">Page {pagination.page} / {pagination.totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+              disabled={!pagination.hasNext || loading}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100"
+            >
+              Next
+            </button>
+          </div>
         </div>
 
         {loading ? (
@@ -222,52 +344,108 @@ export default function AdminAttendance() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {log.photo ? (
-                          <img src={log.photo.startsWith('data:') ? log.photo : `data:image/jpeg;base64,${log.photo}`} alt={log.name} className="w-8 h-8 rounded-full object-cover" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
-                            {getInitial(log.name)}
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const match = staff.find((member) => member.id === log.staff_id);
-                            if (match) setProfileStaff(match);
-                          }}
-                          className="font-medium text-slate-800 hover:text-blue-600"
-                        >
-                          {log.name || 'Unknown Staff'}
-                        </button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-500">{log.position}</td>
-                    <td className="px-6 py-4 text-slate-500 font-mono text-xs">{formatTimestamp(log.timestamp)}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
-                          log.type === 'in' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'
-                        }`}>
-                          {log.type === 'in' ? '→ Clock In' : '← Clock Out'}
-                        </span>
-                        {log.type === 'in' && isLate(log.timestamp, settings) && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
-                            ⚠️ Late
+                {category === 'history'
+                  ? groupedHistoryLogs.map((group) => (
+                    <Fragment key={group.key}>
+                      <tr className="bg-slate-100/80">
+                        <td colSpan={4} className="px-6 py-2.5 text-xs font-bold uppercase tracking-wide text-slate-600">
+                          {group.label}
+                        </td>
+                      </tr>
+                      {group.items.map((log) => (
+                        <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              {log.photo ? (
+                                <img src={log.photo.startsWith('data:') ? log.photo : `data:image/jpeg;base64,${log.photo}`} alt={log.name} className="w-8 h-8 rounded-full object-cover" />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                                  {getInitial(log.name)}
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const match = staff.find((member) => member.id === log.staff_id);
+                                  if (match) setProfileStaff(match);
+                                }}
+                                className="font-medium text-slate-800 hover:text-blue-600"
+                              >
+                                {log.name || 'Unknown Staff'}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-500">{log.position}</td>
+                          <td className="px-6 py-4 text-slate-500 font-mono text-xs">{formatTimestamp(log.timestamp)}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
+                                log.type === 'in' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'
+                              }`}>
+                                {log.type === 'in' ? '→ Clock In' : '← Clock Out'}
+                              </span>
+                              {log.type === 'in' && isLate(log.timestamp, settings) && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                                  ⚠️ Late
+                                </span>
+                              )}
+                              {log.type === 'out' && overtimeLogIds.has(log.id) && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+                                  🕐 Overtime
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  ))
+                  : logs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          {log.photo ? (
+                            <img src={log.photo.startsWith('data:') ? log.photo : `data:image/jpeg;base64,${log.photo}`} alt={log.name} className="w-8 h-8 rounded-full object-cover" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">
+                              {getInitial(log.name)}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const match = staff.find((member) => member.id === log.staff_id);
+                              if (match) setProfileStaff(match);
+                            }}
+                            className="font-medium text-slate-800 hover:text-blue-600"
+                          >
+                            {log.name || 'Unknown Staff'}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">{log.position}</td>
+                      <td className="px-6 py-4 text-slate-500 font-mono text-xs">{formatTimestamp(log.timestamp)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold ${
+                            log.type === 'in' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'
+                          }`}>
+                            {log.type === 'in' ? '→ Clock In' : '← Clock Out'}
                           </span>
-                        )}
-                        {log.type === 'out' && isOvertime(log.timestamp, settings) && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
-                            🕐 Overtime
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {log.type === 'in' && isLate(log.timestamp, settings) && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                              ⚠️ Late
+                            </span>
+                          )}
+                          {log.type === 'out' && overtimeLogIds.has(log.id) && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
+                              🕐 Overtime
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

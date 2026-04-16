@@ -23,10 +23,19 @@ export const recordAttendance = async (staffId, type) => {
 /**
  * Fetch all attendance logs (joined with staff info) from PostgreSQL.
  */
-export const getAttendanceLogs = async ({ staffId, range = 'all' } = {}) => {
+export const getAttendanceLogs = async ({
+  staffId,
+  range = 'all',
+  page,
+  pageSize,
+  paged = false,
+} = {}) => {
   const params = new URLSearchParams();
   if (staffId) params.set('staff_id', String(staffId));
   if (range && range !== 'all') params.set('range', range);
+  if (paged) params.set('paged', 'true');
+  if (Number.isInteger(page) && page > 0) params.set('page', String(page));
+  if (Number.isInteger(pageSize) && pageSize > 0) params.set('page_size', String(pageSize));
 
   const query = params.toString();
   const res = await fetch(`/api/attendance${query ? `?${query}` : ''}`);

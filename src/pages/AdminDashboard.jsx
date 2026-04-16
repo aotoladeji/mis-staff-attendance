@@ -1,8 +1,8 @@
-﻿import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import { getStaff } from '../api/staffService';
 import { getAttendanceLogs } from '../api/attendanceService';
 import { getSettings } from '../api/settingsService';
-import { isLate, isOvertime } from '../utils/attendanceStatus';
+import { buildOvertimeLookup, isLate } from '../utils/attendanceStatus';
 import StaffProfileModal from '../components/StaffProfileModal';
 import { updateStaff } from '../api/staffService';
 
@@ -149,6 +149,7 @@ export default function AdminDashboard() {
       .map((l) => l.staff_id)
   ).size;
   const pendingQueries = staff.filter((s) => !!s.pending_query_note).length;
+  const overtimeLogIds = useMemo(() => buildOvertimeLookup(logs, settings), [logs, settings]);
   const irregularities = buildIrregularities(logs);
   const periodLabel = selectedRange === 'week' ? 'Last 7 days' : selectedRange === 'month' ? 'Last month' : 'All time';
 
@@ -359,7 +360,7 @@ export default function AdminDashboard() {
                           </span>
                         )}
                         {/* Overtime badge */}
-                        {log.type === 'out' && isOvertime(log.timestamp, settings) && (
+                        {log.type === 'out' && overtimeLogIds.has(log.id) && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700">
                             🕐 Overtime
                           </span>

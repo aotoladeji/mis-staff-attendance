@@ -24,7 +24,13 @@ router.get('/stream', (req, res) => {
 
 // GET /api/attendance — all logs, newest first, joined with staff info
 router.get('/', async (req, res) => {
-  const { staff_id, range = 'all' } = req.query;
+  const {
+    staff_id,
+    range = 'all',
+    page: rawPage,
+    page_size: rawPageSize,
+    paged: rawPaged,
+  } = req.query;
 
   const whereClauses = [];
   const params = [];
@@ -38,13 +44,24 @@ router.get('/', async (req, res) => {
     whereClauses.push(`al.staff_id = $${params.length}`);
   }
 
-  let limit = 500;
+  const isPaged = String(rawPaged || '').toLowerCase() === 'true' || String(rawPaged || '') === '1';
+
+  let page = Number.parseInt(rawPage, 10);
+  if (Number.isNaN(page) || page < 1) page = 1;
+
+  let pageSize = Number.parseInt(rawPageSize, 10);
+  if (Number.isNaN(pageSize) || pageSize < 1) pageSize = 50;
+  pageSize = Math.min(pageSize, 100);
+
+  let limit = isPaged ? pageSize : 500;
 
   if (range === 'live') {
     whereClauses.push(`al.timestamp >= NOW() - INTERVAL '24 hours'`);
-    limit = 50;
-  } else if (range === 'daily') {
-    whereClauses.push(`al.timestamp >= NOW() - INTERVAL '1 day'`);
+    limit = isPaged ? pageSize : 50;
+  } else if (range === 'today' || range === 'daily') {
+    whereClauses.push(`al.timestamp::date = CURRENT_DATE`);
+  } else if (range === 'history') {
+    whereClauses.push(`al.timestamp::date < CURRENT_DATE`);
   } else if (range === 'week') {
     whereClauses.push(`al.timestamp >= NOW() - INTERVAL '7 days'`);
   } else if (range === 'month') {
@@ -52,13 +69,29 @@ router.get('/', async (req, res) => {
   } else if (range === 'yearly') {
     whereClauses.push(`al.timestamp >= NOW() - INTERVAL '1 year'`);
   } else if (range !== 'all') {
-    return res.status(400).json({ error: 'range must be one of: live, daily, week, month, yearly, all' });
+    return res.status(400).json({ error: 'range must be one of: live, today, daily, history, week, month, yearly, all' });
   }
 
   const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
   try {
+    const offset = (page - 1) * limit;
+    let total = null;
+
+    if (isPaged) {
+      const { rows: countRows } = await pool.query(
+        `SELECT COUNT(*)::int AS total
+         FROM attendance_logs al
+         ${whereSQL}`,
+        params
+      );
+      total = countRows[0]?.total ?? 0;
+    }
+
     params.push(limit);
+    const limitParamIndex = params.length;
+    params.push(offset);
+    const offsetParamIndex = params.length;
 
     const { rows } = await pool.query(`
       SELECT
@@ -73,9 +106,26 @@ router.get('/', async (req, res) => {
       LEFT JOIN staff s ON s.id = al.staff_id
       ${whereSQL}
       ORDER BY al.timestamp DESC
-      LIMIT $${params.length}
+      LIMIT $${limitParamIndex}
+      OFFSET $${offsetParamIndex}
     `, params);
-    res.json(rows);
+
+    if (!isPaged) {
+      return res.json(rows);
+    }
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    return res.json({
+      data: rows,
+      pagination: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages,
+        hasPrev: page > 1,
+        hasNext: page < totalPages,
+      },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch attendance logs' });

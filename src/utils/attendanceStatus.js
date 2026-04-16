@@ -31,6 +31,67 @@ export const isOvertime = (timestamp, settings) => {
   return ts > cutoff;
 };
 
+const parseTimeToMinutes = (timeStr, fallback) => {
+  const str = timeStr || fallback;
+  const [h, m] = String(str).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return (h * 60) + m;
+};
+
+const expectedShiftMinutes = (settings) => {
+  const start = parseTimeToMinutes(settings?.shift_start, '08:00');
+  const end = parseTimeToMinutes(settings?.shift_end, '17:00');
+  if (start === null || end === null) return 0;
+
+  let duration = end - start;
+  if (duration <= 0) duration += 24 * 60;
+  return duration;
+};
+
+/**
+ * Build a lookup of clock-out log IDs that are genuinely overtime based on
+ * worked minutes, not just time-of-day.
+ */
+export const buildOvertimeLookup = (logs, settings) => {
+  const overtimeIds = new Set();
+  if (!Array.isArray(logs) || logs.length === 0) return overtimeIds;
+
+  const shiftMinutes = expectedShiftMinutes(settings);
+  const overtimeThresholdMinutes = Number(settings?.overtime_min ?? 0);
+  const requiredMinutes = shiftMinutes + Math.max(0, overtimeThresholdMinutes);
+  if (requiredMinutes <= 0) return overtimeIds;
+
+  const openClockIns = new Map();
+  const ordered = [...logs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  for (const log of ordered) {
+    if (!log?.staff_id) continue;
+
+    const logTime = new Date(log.timestamp);
+    if (Number.isNaN(logTime.getTime())) continue;
+
+    if (log.type === 'in') {
+      openClockIns.set(log.staff_id, logTime);
+      continue;
+    }
+
+    if (log.type !== 'out') continue;
+
+    const inTime = openClockIns.get(log.staff_id);
+    if (!inTime) continue;
+
+    const workedMinutes = (logTime.getTime() - inTime.getTime()) / (1000 * 60);
+    if (workedMinutes > requiredMinutes) {
+      overtimeIds.add(log.id);
+    }
+
+    // Close this work session after the first out.
+    openClockIns.delete(log.staff_id);
+  }
+
+  return overtimeIds;
+};
+
 /**
  * Returns the current shift phase based on now vs the configured shift times.
  * 'pre-shift' | 'on-shift' | 'after-hours'
