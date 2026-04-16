@@ -99,7 +99,8 @@ router.get('/', async (req, res) => {
         al.staff_id,
         al.type,
         al.timestamp,
-        COALESCE(s.name, 'Unknown Staff') AS name,
+        COALESCE(NULLIF(SPLIT_PART(COALESCE(s.full_name, s.name), ' ', 1), ''), 'Unknown Staff') AS name,
+        COALESCE(s.full_name, s.name, 'Unknown Staff') AS full_name,
         COALESCE(s.position, 'Not assigned') AS position,
         s.photo
       FROM attendance_logs al
@@ -187,7 +188,8 @@ router.post('/', async (req, res) => {
     // Broadcast to all SSE-connected dashboard clients
     const { rows: broadcastRows } = await pool.query(
       `SELECT al.id, al.staff_id, al.type, al.timestamp,
-              COALESCE(s.name, 'Unknown Staff') AS name,
+              COALESCE(NULLIF(SPLIT_PART(COALESCE(s.full_name, s.name), ' ', 1), ''), 'Unknown Staff') AS name,
+              COALESCE(s.full_name, s.name, 'Unknown Staff') AS full_name,
               COALESCE(s.position, 'Not assigned') AS position,
               s.photo
        FROM attendance_logs al

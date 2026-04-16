@@ -14,12 +14,16 @@ const normalizeText = (value) => {
 const splitNameParts = (rawValue) => {
   const fullName = normalizeText(rawValue);
   if (!fullName) return { name: null, full_name: null };
-
-  const surname = fullName.split(/\s+/)[0] || null;
   return {
-    name: surname,
+    name: fullName,
     full_name: fullName,
   };
+};
+
+const toSurname = (rawValue) => {
+  const normalized = normalizeText(rawValue);
+  if (!normalized) return null;
+  return normalized.split(/\s+/)[0] || normalized;
 };
 
 const normalizeStaffPayload = (payload = {}) => ({
@@ -430,7 +434,16 @@ router.post('/clock', async (req, res) => {
 
     await client.query('COMMIT');
 
-    broadcastAttendanceEvent({ id: attendance.id, staff_id: member.id, type: nextAction, timestamp: attendance.timestamp, name: member.name, position: member.position, photo: member.photo });
+    broadcastAttendanceEvent({
+      id: attendance.id,
+      staff_id: member.id,
+      type: nextAction,
+      timestamp: attendance.timestamp,
+      name: toSurname(member.name),
+      full_name: member.name,
+      position: member.position,
+      photo: member.photo,
+    });
 
     res.json({
       success: true,

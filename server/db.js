@@ -98,10 +98,10 @@ export const initDB = async () => {
       WHERE full_name IS NULL OR BTRIM(full_name) = '';
 
     UPDATE staff
-      SET name = SPLIT_PART(BTRIM(full_name), ' ', 1)
+      SET name = full_name
       WHERE full_name IS NOT NULL
         AND BTRIM(full_name) <> ''
-        AND BTRIM(full_name) LIKE '% %';
+        AND name IS DISTINCT FROM full_name;
 
     ALTER TABLE staff
       ADD COLUMN IF NOT EXISTS card_uid VARCHAR(100);

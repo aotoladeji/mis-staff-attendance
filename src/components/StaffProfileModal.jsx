@@ -200,7 +200,6 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
                   ['full_name', 'Full name'],
-                  ['name', 'Surname'],
                   ['position', 'Position'],
                   ['employee_code', 'Employee code'],
                   ['department', 'Department'],

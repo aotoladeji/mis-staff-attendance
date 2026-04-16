@@ -41,6 +41,7 @@ const getDateKey = (value) => {
 };
 
 const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase() || '?';
+const getSurname = (value) => String(value || '').trim().split(/\s+/)[0] || '';
 
 export default function AdminAttendance() {
   const [category, setCategory] = useState('today');
@@ -186,7 +187,13 @@ export default function AdminAttendance() {
     setStaff((current) => current.map((member) => (member.id === saved.id ? saved : member)));
     setLogs((current) => current.map((entry) => (
       entry.staff_id === saved.id
-        ? { ...entry, name: saved.name, position: saved.position, photo: saved.photo }
+        ? {
+          ...entry,
+          name: getSurname(saved.full_name || saved.name),
+          full_name: saved.full_name || saved.name,
+          position: saved.position,
+          photo: saved.photo,
+        }
         : entry
     )));
     return saved;
