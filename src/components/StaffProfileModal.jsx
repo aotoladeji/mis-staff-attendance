@@ -10,6 +10,7 @@ const getInitial = (value) => String(value || '?').trim().charAt(0).toUpperCase(
 
 const toFormState = (staff) => ({
   name: staff?.name || '',
+  full_name: staff?.full_name || staff?.name || '',
   position: staff?.position || '',
   employee_code: staff?.employee_code || '',
   department: staff?.department || '',
@@ -74,6 +75,8 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
 
   if (!staff) return null;
 
+  const profileName = form.full_name || staff.full_name || form.name || staff.name;
+
   const photoSrc = toPhotoSrc(form.photo || staff.photo);
 
   const handleFieldChange = (event) => {
@@ -102,7 +105,7 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
     try {
       await onSave({
         ...form,
-        name: form.name.trim(),
+        full_name: form.full_name.trim(),
         position: form.position.trim(),
         employee_code: form.employee_code.trim(),
         department: form.department.trim(),
@@ -123,7 +126,7 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
     const rows = [
       ['Staff Name', 'Position', 'Timestamp', 'Action'],
       ...history.map((entry) => [
-        entry.name,
+        entry.full_name || entry.name,
         entry.position,
         formatDateTime(entry.timestamp),
         entry.type === 'in' ? 'Clock In' : 'Clock Out',
@@ -135,7 +138,7 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${staff.name.replaceAll(/\s+/g, '-').toLowerCase()}-attendance.csv`;
+    link.download = `${profileName.replaceAll(/\s+/g, '-').toLowerCase()}-attendance.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -149,15 +152,15 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-4">
               {photoSrc ? (
-                <img src={photoSrc} alt={staff.name} className="w-20 h-20 rounded-3xl object-cover border border-white/20 shadow-lg" />
+                <img src={photoSrc} alt={profileName} className="w-20 h-20 rounded-3xl object-cover border border-white/20 shadow-lg" />
               ) : (
                 <div className="w-20 h-20 rounded-3xl bg-white/10 border border-white/20 flex items-center justify-center text-3xl font-bold">
-                  {getInitial(staff.name)}
+                  {getInitial(profileName)}
                 </div>
               )}
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-sky-200">Staff profile</p>
-                <h2 className="text-2xl font-bold mt-2">{staff.name}</h2>
+                <h2 className="text-2xl font-bold mt-2">{profileName}</h2>
                 <p className="text-slate-300 mt-1">{staff.position}</p>
               </div>
             </div>
@@ -196,7 +199,8 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  ['name', 'Full name'],
+                  ['full_name', 'Full name'],
+                  ['name', 'Surname'],
                   ['position', 'Position'],
                   ['employee_code', 'Employee code'],
                   ['department', 'Department'],
@@ -244,10 +248,10 @@ export default function StaffProfileModal({ staff, onClose, onSave, showAttendan
                   <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Photo</span>
                   <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-4 text-sm text-slate-800 min-h-[50px] flex items-center gap-4">
                     {photoSrc ? (
-                      <img src={photoSrc} alt={staff.name} className="w-16 h-16 rounded-2xl object-cover" />
+                      <img src={photoSrc} alt={profileName} className="w-16 h-16 rounded-2xl object-cover" />
                     ) : (
                       <div className="w-16 h-16 rounded-2xl bg-slate-200 flex items-center justify-center text-slate-500 font-bold">
-                        {getInitial(staff.name)}
+                        {getInitial(profileName)}
                       </div>
                     )}
                     {editing ? (

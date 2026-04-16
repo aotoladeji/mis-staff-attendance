@@ -56,6 +56,7 @@ export default function StaffManagement() {
   const filtered = staff.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
+      String(s.full_name || '').toLowerCase().includes(search.toLowerCase()) ||
       s.position.toLowerCase().includes(search.toLowerCase()) ||
       String(s.employee_code || '').toLowerCase().includes(search.toLowerCase()) ||
       String(s.department || '').toLowerCase().includes(search.toLowerCase()) ||

@@ -11,8 +11,19 @@ const normalizeText = (value) => {
   return trimmed ? trimmed : null;
 };
 
+const splitNameParts = (rawValue) => {
+  const fullName = normalizeText(rawValue);
+  if (!fullName) return { name: null, full_name: null };
+
+  const surname = fullName.split(/\s+/)[0] || null;
+  return {
+    name: surname,
+    full_name: fullName,
+  };
+};
+
 const normalizeStaffPayload = (payload = {}) => ({
-  name: normalizeText(payload.name),
+  ...splitNameParts(payload.full_name ?? payload.name),
   position: normalizeText(payload.position),
   employee_code: normalizeText(payload.employee_code),
   department: normalizeText(payload.department),
@@ -28,6 +39,7 @@ const staffSelect = `
   SELECT
     s.id,
     s.name,
+    s.full_name,
     s.position,
     s.employee_code,
     s.department,
@@ -77,8 +89,8 @@ const findExistingStaff = async (client, staff) => {
 
   if (staff.name && staff.position) {
     const existing = await client.query(
-      'SELECT id FROM staff WHERE LOWER(name) = LOWER($1) AND LOWER(position) = LOWER($2) LIMIT 1',
-      [staff.name, staff.position]
+      'SELECT id FROM staff WHERE LOWER(COALESCE(full_name, name)) = LOWER($1) AND LOWER(position) = LOWER($2) LIMIT 1',
+      [staff.full_name || staff.name, staff.position]
     );
     if (existing.rows[0]) return existing.rows[0];
   }
@@ -167,11 +179,12 @@ router.post('/', async (req, res) => {
     await client.query('BEGIN');
 
     const { rows: staffRows } = await client.query(
-      `INSERT INTO staff (name, position, employee_code, department, email, phone, status, notes, photo, card_uid)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING id, name, position, employee_code, department, email, phone, status, notes, photo, card_uid, created_at`,
+      `INSERT INTO staff (name, full_name, position, employee_code, department, email, phone, status, notes, photo, card_uid)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, name, full_name, position, employee_code, department, email, phone, status, notes, photo, card_uid, created_at`,
       [
         staff.name,
+        staff.full_name,
         staff.position,
         staff.employee_code,
         staff.department,
@@ -229,18 +242,20 @@ router.post('/bulk-import', async (req, res) => {
         await client.query(
           `UPDATE staff
            SET name = $1,
-               position = $2,
-               employee_code = $3,
-               department = $4,
-               email = $5,
-               phone = $6,
-               status = $7,
-               notes = $8,
-               photo = COALESCE($9, photo),
-               card_uid = $10
-           WHERE id = $11`,
+               full_name = $2,
+               position = $3,
+               employee_code = $4,
+               department = $5,
+               email = $6,
+               phone = $7,
+               status = $8,
+               notes = $9,
+               photo = COALESCE($10, photo),
+               card_uid = $11
+           WHERE id = $12`,
           [
             staff.name,
+            staff.full_name,
             staff.position,
             staff.employee_code,
             staff.department,
@@ -256,10 +271,11 @@ router.post('/bulk-import', async (req, res) => {
         updated += 1;
       } else {
         await client.query(
-          `INSERT INTO staff (name, position, employee_code, department, email, phone, status, notes, photo, card_uid)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          `INSERT INTO staff (name, full_name, position, employee_code, department, email, phone, status, notes, photo, card_uid)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             staff.name,
+            staff.full_name,
             staff.position,
             staff.employee_code,
             staff.department,
@@ -467,10 +483,10 @@ router.post('/register', async (req, res) => {
 
     if (!rows[0]) {
       const { rows: createdRows } = await client.query(
-        `INSERT INTO staff (name, position, employee_code, department, status)
-         VALUES ($1, $2, $3, $4, 'active')
-         RETURNING id, name, employee_code`,
-        [fullName || staffId, position || 'Staff', staffId, department || null]
+        `INSERT INTO staff (name, full_name, position, employee_code, department, status)
+         VALUES ($1, $2, $3, $4, $5, 'active')
+         RETURNING id, name, full_name, employee_code`,
+        [splitNameParts(fullName || staffId).name || staffId, splitNameParts(fullName || staffId).full_name || staffId, position || 'Staff', staffId, department || null]
       );
       dbId = createdRows[0].id;
       name = createdRows[0].name;
@@ -484,10 +500,11 @@ router.post('/register', async (req, res) => {
       await client.query(
         `UPDATE staff
          SET name = COALESCE(NULLIF($1, ''), name),
-             department = COALESCE(NULLIF($2, ''), department),
-             position = COALESCE(NULLIF($3, ''), position)
-         WHERE id = $4`,
-        [fullName, department, position, dbId]
+             full_name = COALESCE(NULLIF($2, ''), full_name),
+             department = COALESCE(NULLIF($3, ''), department),
+             position = COALESCE(NULLIF($4, ''), position)
+         WHERE id = $5`,
+        [splitNameParts(fullName).name, splitNameParts(fullName).full_name, department, position, dbId]
       );
     }
 
@@ -507,7 +524,12 @@ router.post('/register', async (req, res) => {
 
     res.json({
       success: true,
-      staff: { id: dbId, name: fullName || name, employee_code },
+      staff: {
+        id: dbId,
+        name: splitNameParts(fullName || name).name || name,
+        full_name: splitNameParts(fullName || name).full_name || fullName || name,
+        employee_code,
+      },
       message: fingerprintTemplate ? 'Fingerprint enrolled successfully' : 'Staff profile registered (no fingerprint supplied)',
     });
   } catch (err) {
@@ -533,6 +555,7 @@ router.post('/lookup', async (req, res) => {
     const isNumeric = /^\d+$/.test(String(staffId));
     const { rows } = await pool.query(
       `SELECT s.id, s.name, s.position, s.department, s.employee_code, s.photo, s.status, s.card_uid,
+        s.full_name,
         COUNT(f.id)::int AS fingerprint_count,
         (SELECT type FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action,
         (SELECT timestamp FROM attendance_logs WHERE staff_id = s.id ORDER BY timestamp DESC LIMIT 1) AS last_action_time
@@ -576,19 +599,21 @@ router.put('/:id', async (req, res) => {
     const { rows } = await pool.query(
       `UPDATE staff
        SET name = $1,
-           position = $2,
-           employee_code = $3,
-           department = $4,
-           email = $5,
-           phone = $6,
-           status = $7,
-           notes = $8,
-           photo = $9,
-           card_uid = $10
-       WHERE id = $11
-       RETURNING id, name, position, employee_code, department, email, phone, status, notes, photo, card_uid, created_at, pending_query_note, pending_query_updated_at`,
+           full_name = $2,
+           position = $3,
+           employee_code = $4,
+           department = $5,
+           email = $6,
+           phone = $7,
+           status = $8,
+           notes = $9,
+           photo = $10,
+           card_uid = $11
+       WHERE id = $12
+       RETURNING id, name, full_name, position, employee_code, department, email, phone, status, notes, photo, card_uid, created_at, pending_query_note, pending_query_updated_at`,
       [
         staff.name,
+        staff.full_name,
         staff.position,
         staff.employee_code,
         staff.department,

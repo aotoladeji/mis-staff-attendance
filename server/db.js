@@ -52,6 +52,7 @@ export const initDB = async () => {
     CREATE TABLE IF NOT EXISTS staff (
       id               SERIAL PRIMARY KEY,
       name             VARCHAR(255)  NOT NULL,
+      full_name        VARCHAR(255),
       position         VARCHAR(255)  NOT NULL,
       employee_code    VARCHAR(100),
       department       VARCHAR(255),
@@ -88,6 +89,19 @@ export const initDB = async () => {
 
     ALTER TABLE staff
       ADD COLUMN IF NOT EXISTS notes TEXT;
+
+    ALTER TABLE staff
+      ADD COLUMN IF NOT EXISTS full_name VARCHAR(255);
+
+    UPDATE staff
+      SET full_name = name
+      WHERE full_name IS NULL OR BTRIM(full_name) = '';
+
+    UPDATE staff
+      SET name = SPLIT_PART(BTRIM(full_name), ' ', 1)
+      WHERE full_name IS NOT NULL
+        AND BTRIM(full_name) <> ''
+        AND BTRIM(full_name) LIKE '% %';
 
     ALTER TABLE staff
       ADD COLUMN IF NOT EXISTS card_uid VARCHAR(100);

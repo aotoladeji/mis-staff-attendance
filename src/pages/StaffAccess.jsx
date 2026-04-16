@@ -81,10 +81,15 @@ const rowsFromWorksheet = (sheet) => {
 };
 
 const mapSpreadsheetRow = (row) => ({
-  name: String(
-    getCellValue(row, ['name', 'full name', 'staff name', 'first name']) ||
+  full_name: String(
+    getCellValue(row, ['full name', 'staff name', 'name']) ||
+    `${getCellValue(row, ['surname', 'last name', 'lastname']) || ''} ${getCellValue(row, ['other names', 'other name', 'first name', 'firstname', 'middle name']) || ''}` ||
     `${getCellValue(row, ['first name', 'firstname']) || ''} ${getCellValue(row, ['last name', 'lastname', 'surname']) || ''}`
   ).trim(),
+  name: String(
+    getCellValue(row, ['surname', 'last name', 'lastname']) ||
+    getCellValue(row, ['name', 'full name', 'staff name'])
+  ).trim().split(/\s+/)[0] || '',
   position: String(getCellValue(row, ['position', 'role', 'title', 'designation', 'job title']) || '').trim(),
   employee_code: String(getCellValue(row, ['employee code', 'staff id', 'code', 'employee_id']) || '').trim(),
   department: String(getCellValue(row, ['department', 'team', 'unit']) || '').trim(),
