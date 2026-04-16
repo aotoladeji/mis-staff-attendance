@@ -80,16 +80,21 @@ const rowsFromWorksheet = (sheet) => {
     .filter((row) => Object.values(row).some((value) => String(value || '').trim() !== ''));
 };
 
-const mapSpreadsheetRow = (row) => ({
-  full_name: String(
-    getCellValue(row, ['full name', 'staff name', 'name']) ||
-    `${getCellValue(row, ['surname', 'last name', 'lastname']) || ''} ${getCellValue(row, ['other names', 'other name', 'first name', 'firstname', 'middle name']) || ''}` ||
-    `${getCellValue(row, ['first name', 'firstname']) || ''} ${getCellValue(row, ['last name', 'lastname', 'surname']) || ''}`
-  ).trim(),
-  name: String(
-    getCellValue(row, ['surname', 'last name', 'lastname']) ||
-    getCellValue(row, ['name', 'full name', 'staff name'])
-  ).trim().split(/\s+/)[0] || '',
+const mapSpreadsheetRow = (row) => {
+  const surname = String(getCellValue(row, ['surname', 'last name', 'lastname']) || '').trim();
+  const otherNames = String(getCellValue(row, ['other names', 'other name', 'first name', 'firstname', 'middle name']) || '').trim();
+  const explicitFullName = String(getCellValue(row, ['full name', 'staff name']) || '').trim();
+  const genericName = String(getCellValue(row, ['name']) || '').trim();
+
+  const fullName =
+    explicitFullName ||
+    `${surname} ${otherNames}`.trim() ||
+    genericName ||
+    `${getCellValue(row, ['first name', 'firstname']) || ''} ${getCellValue(row, ['last name', 'lastname', 'surname']) || ''}`.trim();
+
+  return {
+  full_name: fullName,
+  name: fullName,
   position: String(getCellValue(row, ['position', 'role', 'title', 'designation', 'job title']) || '').trim(),
   employee_code: String(getCellValue(row, ['employee code', 'staff id', 'code', 'employee_id']) || '').trim(),
   department: String(getCellValue(row, ['department', 'team', 'unit']) || '').trim(),
@@ -99,7 +104,8 @@ const mapSpreadsheetRow = (row) => ({
   status: String(getCellValue(row, ['status']) || 'active').trim() || 'active',
   notes: String(getCellValue(row, ['notes', 'remark', 'remarks']) || '').trim(),
   photo: String(getCellValue(row, ['photo', 'photo base64']) || '').trim(),
-});
+  };
+};
 
 const toPhotoSrc = (photo) => {
   if (!photo) return '';
